@@ -23,6 +23,22 @@ Built using **React**, **Supabase**, and **Gemini AI**, this platform demonstrat
 
 ---
 
+## 📸 Screenshots
+
+### 🧠 AI-Powered Debate Simulation  
+![AI Debate Simulation](https://github.com/Darshan0244/DebatePracticeZone/blob/79b13e6847e40fdda4ca21ab64e7507c46eb1e51/Screenshot%202025-06-15%20174246.png?raw=true)
+
+### 🎯 Performance Feedback  
+![Performance Feedback](https://github.com/Darshan0244/DebatePracticeZone/blob/79b13e6847e40fdda4ca21ab64e7507c46eb1e51/Screenshot%202025-06-15%20174327.png?raw=true)
+
+### 📊 Round-wise Scoring  
+![Round-wise Scoring](https://github.com/Darshan0244/DebatePracticeZone/blob/79b13e6847e40fdda4ca21ab64e7507c46eb1e51/Screenshot%202025-06-15%20174405.png?raw=true)
+
+### 🔍 Argument Analysis  
+![Argument Analysis](https://github.com/Darshan0244/DebatePracticeZone/blob/79b13e6847e40fdda4ca21ab64e7507c46eb1e51/Screenshot%202025-06-15%20174429.png?raw=true)
+
+----
+
 ## ✨ Features
 
 - 🤖 **AI-Simulated Debates** – Practice structured debates with Gemini 1.5 Flash  
