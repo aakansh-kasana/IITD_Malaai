@@ -14,8 +14,8 @@ An AI-powered debate learning platform that helps students master argumentation 
 
 1. **Clone & Install**
    ```bash
-   git clone https://github.com/yourusername/debatepracticezone.git
-   cd debatepracticezone
+   git clone https://github.com/Darshan0244/DebatePracticeZone.git
+   cd DebatePracticeZone
    npm install
    ```
 
@@ -52,7 +52,7 @@ VITE_GEMINI_API_KEY=your_gemini_key
 
 ## 📱 Demo
 
-Visit the live demo: [DebatePracticeZone](https://your-demo-url.com)
+Visit the live demo: [DebatePracticeZone](https://eloquent-sorbet-f1de73.netlify.app/)
 
 ## 🤝 Contributing
 
