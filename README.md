@@ -151,27 +151,11 @@ We welcome all contributions — from improving documentation to adding new feat
 
 ## 🔭 Roadmap Highlights
 
-* [ ] 🎙️ Voice-based AI debate rounds
-* [ ] 📥 Debate transcript export (PDF/JSON)
-* [ ] 🧑‍🏫 Teacher dashboard with class tracking
-* [ ] 🔌 Support GPT-4 and Claude models
-* [ ] 🌍 Multi-language debate support
-
----
-
-## 👨‍💻 About Me
-
-Hi! I’m **Darshan**, a 3rd-year Computer Science undergrad passionate about building impactful tech products. I love working at the intersection of **AI**, **education**, and **web development**.
-
-* 🔧 Skills: React, Node.js, TypeScript, Tailwind, Supabase, Gemini AI
-* 🌱 Past Work:
-
-  * [Recipe Website](https://github.com/Darshan0244/RecipeWebsite)
-  * [Simon Says Game](https://github.com/Darshan0244/Simon_Says_Game)
-  * \[CollegeHub: MERN Resource Sharing Platform]
-* 🏆 Finalist @ Unstop Talent Park 2025 | Yukti 2025 CODEHUNTERS
-* 🧑‍💼 Interned at EY GDS (AICTE) and Edunet Foundation
-* 🌐 [LinkedIn →](https://www.linkedin.com/in/darshan0244)
+*  🎙️ Voice-based AI debate rounds
+*  📥 Debate transcript export (PDF/JSON)
+*  🧑‍🏫 Teacher dashboard with class tracking
+*  🔌 Support GPT-4 and Claude models
+*  🌍 Multi-language debate support
 
 ---
 
