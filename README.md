@@ -34,6 +34,12 @@ Built using **React**, **Supabase**, and **Gemini AI**, this platform demonstrat
 ### 📊 Debate Master
 ![Round-wise Scoring](https://github.com/Darshan0244/DebatePracticeZone/blob/79b13e6847e40fdda4ca21ab64e7507c46eb1e51/Screenshot%202025-06-15%20174405.png?raw=true)
 
+### 📈 Performance Analysis
+![Live Presentation](https://github.com/Darshan0244/DebatePracticeZone/blob/89ce3e9e3c90dc5c423312d451ac445bc97db6a6/IMG_20250616_083606.jpg?raw=true)
+
+### 🧾 Suggestions for next Debate 
+![Participation Photo](https://github.com/Darshan0244/DebatePracticeZone/blob/89ce3e9e3c90dc5c423312d451ac445bc97db6a6/IMG_20250616_083705.jpg?raw=true)
+
 ### 🔍 Achievements
 ![Argument Analysis](https://github.com/Darshan0244/DebatePracticeZone/blob/79b13e6847e40fdda4ca21ab64e7507c46eb1e51/Screenshot%202025-06-15%20174429.png?raw=true)
 
