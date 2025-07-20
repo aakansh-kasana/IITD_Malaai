@@ -231,6 +231,11 @@ export const useAuth = () => {
       });
 
       if (error) {
+        if (error.message.includes('Invalid login credentials')) {
+          const errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+          setError(errorMessage);
+          return { data: null, error: errorMessage };
+        }
         if (error.message.includes('Demo mode')) {
           // Create a demo user for demo mode
           const demoUser: User = {

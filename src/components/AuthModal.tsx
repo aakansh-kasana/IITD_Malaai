@@ -130,7 +130,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="flex items-start">
                 <AlertCircle className="h-5 w-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
                 <div>
-                  {error && <p className="text-red-800 font-medium text-sm">{error}</p>}
+                  {error && (
+                    <div className="text-red-800 font-medium text-sm mb-2">
+                      {error}
+                      {error.includes('Invalid email or password') && (
+                        <div className="mt-2 text-red-700 text-xs">
+                          <p>• Make sure you're using the correct email address</p>
+                          <p>• Check that your password is entered correctly</p>
+                          <p>• If you don't have an account, click "Sign Up" below</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {validationErrors.map((err, index) => (
                     <p key={index} className="text-red-700 text-sm">{err}</p>
                   ))}
