@@ -1,13 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Bot, User, Clock, Trophy, Target, AlertCircle, Zap, Key, ArrowLeft } from 'lucide-react';
+import { Send, Bot, User, Clock, Trophy, Target, AlertCircle, Zap, Key, ArrowLeft, Mic, Volume2 } from 'lucide-react';
 import { DebateMessage, Feedback } from '../types';
 import { geminiService } from '../services/geminiService';
+import Waveform from './Waveform';
 
 interface PracticeDebateProps {
   onComplete: (xpGained: number) => void;
   onBack: () => void;
 }
+
+type DebateFormat = 'text-speech' | 'direct-speech';
 
 export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBack }) => {
   const [topic, setTopic] = useState('');
@@ -15,7 +18,7 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
   const [debateStarted, setDebateStarted] = useState(false);
   const [messages, setMessages] = useState<DebateMessage[]>([]);
   const [currentMessage, setCurrentMessage] = useState('');
-  const [timeRemaining, setTimeRemaining] = useState(300); // 5 minutes
+  const [timeRemaining, setTimeRemaining] = useState(300);
   const [argumentCount, setArgumentCount] = useState(0);
   const [userTurn, setUserTurn] = useState(true);
   const [debateEnded, setDebateEnded] = useState(false);
@@ -25,6 +28,21 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
   const [apiError, setApiError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
+  const [speechLang] = useState('en-IN');
+  const [debateFormat, setDebateFormat] = useState<DebateFormat>('text-speech');
+  const [directSpeechTurn, setDirectSpeechTurn] = useState<'user' | 'ai'>('user');
+  const [showFirstInstruction, setShowFirstInstruction] = useState(true);
+  const [isDirectRecording, setIsDirectRecording] = useState(false);
+  const directRecognitionRef = useRef<any>(null);
+  const [aiSpeech, setAiSpeech] = useState<string>('');
+  const [aiSpeaking, setAiSpeaking] = useState(false);
+  const [aiSpeechSpeed, setAiSpeechSpeed] = useState(1);
+  const [aiSpeechUtter, setAiSpeechUtter] = useState<SpeechSynthesisUtterance | null>(null);
 
   const topics = [
     'School uniforms should be mandatory',
@@ -40,21 +58,16 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
   ];
 
   useEffect(() => {
-    // Check if Gemini is configured
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key');
     setAiConfigured(!!apiKey);
-    
-    // Reinitialize service if API key was added
     if (apiKey) {
       geminiService.reinitialize();
     }
   }, []);
 
   useEffect(() => {
-    // Scroll to bottom when new messages are added, but maintain container position
     if (messages.length > 0 && messagesContainerRef.current) {
       const container = messagesContainerRef.current;
-      // Use requestAnimationFrame to ensure DOM is updated
       requestAnimationFrame(() => {
         container.scrollTop = container.scrollHeight;
       });
@@ -73,22 +86,48 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
     return () => clearTimeout(timer);
   }, [timeRemaining, debateStarted, debateEnded]);
 
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (synthRef.current) {
+        synthRef.current.cancel();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (directRecognitionRef.current) {
+        directRecognitionRef.current.onend = null;
+        directRecognitionRef.current.onerror = null;
+        directRecognitionRef.current.onresult = null;
+        directRecognitionRef.current.stop();
+      }
+      window.speechSynthesis.cancel();
+    };
+  }, []);
+
   const startDebate = () => {
     if (!topic) return;
-    
     if (!aiConfigured) {
       setApiError('Gemini API key required for AI debate responses. Please add your API key first.');
       return;
     }
-    
-    console.log('Starting unlimited debate with topic:', topic, 'User side:', userSide);
     setDebateStarted(true);
     setMessages([]);
     setArgumentCount(0);
     setUserTurn(userSide === 'pro');
     setApiError(null);
-    
-    // AI opens if user chose con
     if (userSide === 'con') {
       setTimeout(() => {
         generateAIResponse("", 1, []);
@@ -97,17 +136,8 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
   };
 
   const generateAIResponse = async (userArgument: string, currentArgument: number, history: string[]) => {
-    console.log('Generating AI response...', { 
-      topic, 
-      userArgument, 
-      argumentCount: currentArgument,
-      history: history.length,
-      aiSide: userSide === 'pro' ? 'con' : 'pro'
-    });
-    
     setIsAiThinking(true);
     setApiError(null);
-    
     try {
       const aiSide = userSide === 'pro' ? 'con' : 'pro';
       const response = await geminiService.generateDebateResponse(
@@ -117,18 +147,13 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
         currentArgument,
         history
       );
-      
-      console.log('AI response received:', response);
-      
-      // Generate feedback for AI's response (simulated high score)
       const aiFeedback: Feedback = {
-        score: Math.floor(Math.random() * 10) + 90, // AI scores 90-100
+        score: Math.floor(Math.random() * 10) + 90,
         strengths: ['Well-structured argument', 'Strong evidence', 'Clear reasoning'],
         improvements: ['Could expand on examples'],
         fallaciesDetected: [],
         suggestions: ['Continue with strong rebuttals']
       };
-      
       const aiMessage: DebateMessage = {
         id: Date.now().toString(),
         speaker: 'ai',
@@ -136,16 +161,11 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
         timestamp: new Date(),
         feedback: aiFeedback
       };
-      
       setMessages(prev => [...prev, aiMessage]);
       setUserTurn(true);
-      
     } catch (error: any) {
-      console.error('Error generating AI response:', error);
       setApiError(error.message || 'Failed to generate AI response');
       setUserTurn(true);
-      
-      // Add error message to chat
       const errorMessage: DebateMessage = {
         id: Date.now().toString(),
         speaker: 'ai',
@@ -167,23 +187,17 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
 
   const sendMessage = async () => {
     if (!currentMessage.trim() || !userTurn) return;
-
-    console.log('Sending user message:', currentMessage, 'Topic:', topic);
     setUserTurn(false);
     setApiError(null);
-    
     const newArgumentCount = argumentCount + 1;
     setArgumentCount(newArgumentCount);
-    
     try {
-      // Analyze user's argument with AI
       const feedback = await geminiService.analyzeFeedback(
         currentMessage,
         topic,
         userSide,
         newArgumentCount
       );
-
       const userMessage: DebateMessage = {
         id: Date.now().toString(),
         speaker: 'user',
@@ -191,26 +205,18 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
         timestamp: new Date(),
         feedback
       };
-
       setMessages(prev => {
         const newMessages = [...prev, userMessage];
-        console.log('Updated messages:', newMessages.length);
         return newMessages;
       });
-      
       const messageHistory = [...messages.map(m => `${m.speaker}: ${m.content}`), `user: ${currentMessage}`];
       const currentUserMessage = currentMessage;
       setCurrentMessage('');
-
-      // Generate AI response after a short delay
       setTimeout(() => {
         generateAIResponse(currentUserMessage, newArgumentCount, messageHistory);
       }, 1500);
     } catch (error: any) {
-      console.error('Error analyzing user message:', error);
       setApiError(error.message || 'Failed to analyze your message');
-      
-      // Still add user message but with error feedback
       const userMessage: DebateMessage = {
         id: Date.now().toString(),
         speaker: 'user',
@@ -224,7 +230,6 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
           suggestions: ['Unable to analyze - please check your Gemini API key']
         }
       };
-
       setMessages(prev => [...prev, userMessage]);
       setCurrentMessage('');
       setUserTurn(true);
@@ -232,21 +237,16 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
   };
 
   const endDebate = async () => {
-    console.log('Ending debate...');
     setDebateEnded(true);
     setUserTurn(false);
-    
-    // Calculate final feedback based on all user messages
     const userMessages = messages.filter(m => m.speaker === 'user');
     const avgScore = userMessages.length > 0 
       ? Math.round(userMessages.reduce((sum, m) => sum + (m.feedback?.score || 0), 0) / userMessages.length)
       : 75;
-    
     const allStrengths = userMessages.flatMap(m => m.feedback?.strengths || []);
     const allImprovements = userMessages.flatMap(m => m.feedback?.improvements || []);
     const allFallacies = userMessages.flatMap(m => m.feedback?.fallaciesDetected || []);
     const allSuggestions = userMessages.flatMap(m => m.feedback?.suggestions || []);
-    
     const feedback: Feedback = {
       score: avgScore,
       strengths: [...new Set(allStrengths)].slice(0, 3),
@@ -254,14 +254,10 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
       fallaciesDetected: [...new Set(allFallacies)],
       suggestions: [...new Set(allSuggestions)].slice(0, 3)
     };
-    
     setFinalFeedback(feedback);
-    
-    // Award XP based on performance and number of arguments
-    const baseXP = Math.floor(avgScore * 2.5); // 150-250 XP range
-    const argumentBonus = Math.min(userMessages.length * 10, 100); // Up to 100 bonus XP for more arguments
+    const baseXP = Math.floor(avgScore * 2.5);
+    const argumentBonus = Math.min(userMessages.length * 10, 100);
     const totalXP = baseXP + argumentBonus;
-    
     setTimeout(() => onComplete(totalXP), 3000);
   };
 
@@ -271,7 +267,6 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Reset function to restart the debate
   const resetDebate = () => {
     setDebateStarted(false);
     setDebateEnded(false);
@@ -285,6 +280,161 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
     setApiError(null);
     setTopic('');
     setUserSide('pro');
+  };
+
+  const handleMicClick = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  const startRecording = () => {
+    setRecordingError(null);
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      setRecordingError('Speech recognition is not supported in this browser.');
+      return;
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = speechLang;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setCurrentMessage((prev) => prev ? prev + ' ' + transcript : transcript);
+    };
+    recognition.onerror = (event: any) => {
+      setRecordingError('Speech recognition error: ' + event.error);
+      setIsRecording(false);
+    };
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsRecording(true);
+  };
+
+  const stopRecording = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    setIsRecording(false);
+  };
+
+  const handleSpeak = (messageId: string, text: string) => {
+    if (speakingId === messageId) {
+      window.speechSynthesis.cancel();
+      setSpeakingId(null);
+      return;
+    }
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeakingId(messageId);
+    const utter = new window.SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoices = voices.filter(v => v.lang.startsWith('en-IN') || v.lang.startsWith('hi-IN'));
+    if (preferredVoices.length > 0) {
+      utter.voice = preferredVoices[0];
+    }
+    utter.onend = () => setSpeakingId(null);
+    utter.onerror = () => setSpeakingId(null);
+    window.speechSynthesis.speak(utter);
+  };
+
+  const handleDirectMicClick = () => {
+    if (isDirectRecording) {
+      stopDirectRecording();
+    } else {
+      startDirectRecording();
+    }
+  };
+
+  const startDirectRecording = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      alert('Speech recognition is not supported in this browser.');
+      return;
+    }
+    setIsDirectRecording(true);
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = speechLang;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = async (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setIsDirectRecording(false);
+      setShowFirstInstruction(false);
+      setDirectSpeechTurn('ai');
+      const aiResponse = await geminiService.generateDebateResponse(
+        topic,
+        transcript,
+        userSide === 'pro' ? 'con' : 'pro',
+        argumentCount + 1,
+        []
+      );
+      setAiSpeech(aiResponse);
+      setArgumentCount((prev) => prev + 1);
+      playAiSpeech(aiResponse, aiSpeechSpeed);
+    };
+    recognition.onerror = (event: any) => {
+      setIsDirectRecording(false);
+      alert('Speech recognition error: ' + event.error);
+    };
+    recognition.onend = () => {
+      setIsDirectRecording(false);
+    };
+    directRecognitionRef.current = recognition;
+    recognition.start();
+  };
+
+  const stopDirectRecording = () => {
+    if (directRecognitionRef.current) {
+      directRecognitionRef.current.stop();
+    }
+    setIsDirectRecording(false);
+  };
+
+  const playAiSpeech = (text: string, speed: number) => {
+    window.speechSynthesis.cancel();
+    setAiSpeaking(true);
+    const utter = new window.SpeechSynthesisUtterance(text);
+    utter.rate = speed;
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoices = voices.filter(v => v.lang.startsWith('en-IN') || v.lang.startsWith('hi-IN'));
+    if (preferredVoices.length > 0) {
+      utter.voice = preferredVoices[0];
+    }
+    utter.onend = () => {
+      setAiSpeaking(false);
+      setDirectSpeechTurn('user');
+      setAiSpeechUtter(null);
+    };
+    utter.onerror = () => {
+      setAiSpeaking(false);
+      setDirectSpeechTurn('user');
+      setAiSpeechUtter(null);
+    };
+    setAiSpeechUtter(utter);
+    window.speechSynthesis.speak(utter);
+  };
+
+  const handleAiSpeedChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newSpeed = parseFloat(e.target.value);
+    setAiSpeechSpeed(newSpeed);
+    if (aiSpeaking && aiSpeechUtter) {
+      window.speechSynthesis.cancel();
+      playAiSpeech(aiSpeech, newSpeed);
+    }
+  };
+
+  const handleAiReplay = () => {
+    if (aiSpeech) {
+      playAiSpeech(aiSpeech, aiSpeechSpeed);
+    }
   };
 
   if (debateEnded && finalFeedback) {
@@ -457,7 +607,6 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4">
         <div className="max-w-4xl mx-auto">
-          {/* Back Button */}
           <div className="mb-6">
             <button
               onClick={onBack}
@@ -568,6 +717,36 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
                 </div>
               </div>
 
+              <div>
+                <label className="block text-base sm:text-lg font-medium text-gray-900 mb-4">
+                  Choose debate format:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <button
+                    onClick={() => setDebateFormat('text-speech')}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      debateFormat === 'text-speech'
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-blue-300'
+                    }`}
+                  >
+                    <div className="text-base sm:text-lg font-semibold text-blue-700">Text + Speech</div>
+                    <div className="text-xs sm:text-sm text-gray-600">Type or speak your arguments</div>
+                  </button>
+                  <button
+                    onClick={() => setDebateFormat('direct-speech')}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      debateFormat === 'direct-speech'
+                        ? 'border-purple-500 bg-purple-50'
+                        : 'border-gray-200 hover:border-purple-300'
+                    }`}
+                  >
+                    <div className="text-base sm:text-lg font-semibold text-purple-700">Direct Speech</div>
+                    <div className="text-xs sm:text-sm text-gray-600">Voice-only debate</div>
+                  </button>
+                </div>
+              </div>
+
               <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 sm:p-6 rounded-lg">
                 <h3 className="font-medium text-gray-900 mb-3 text-sm sm:text-base">🚀 Unlimited Debate Features:</h3>
                 <ul className="text-xs sm:text-sm text-gray-600 space-y-2">
@@ -610,14 +789,101 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
     );
   }
 
+  if (debateFormat === 'direct-speech') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-2 sm:p-4 flex flex-col items-center">
+        <div className="max-w-4xl w-full mx-auto flex flex-col lg:flex-row gap-6">
+          <div className="flex-1 bg-white rounded-xl shadow-lg p-6 flex flex-col items-center justify-center">
+            <h2 className="text-xl sm:text-2xl font-bold text-purple-700 mb-6">Direct Speech Debate</h2>
+            <button
+              onClick={() => setDebateFormat('text-speech')}
+              className="mb-6 px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors"
+            >
+              Switch to Text+Speech
+            </button>
+            {showFirstInstruction && (
+              <div className="mb-4 text-gray-400 text-sm animate-fade-in">
+                Press your mic button to speak every time
+              </div>
+            )}
+            <div className="flex flex-row gap-12 items-center justify-center mt-4">
+              <div className="flex flex-col items-center">
+                <button
+                  className={`rounded-full w-20 h-20 flex items-center justify-center border-4 transition-all text-2xl font-bold mb-2 ${directSpeechTurn === 'user' ? 'border-purple-500 bg-purple-100 animate-pulse' : 'border-gray-300 bg-gray-100'}`}
+                  disabled={directSpeechTurn !== 'user' || isDirectRecording}
+                  onClick={handleDirectMicClick}
+                >
+                  <Mic className={`h-10 w-10 ${directSpeechTurn === 'user' ? 'text-purple-700' : 'text-gray-400'}`} />
+                </button>
+                <div className={`mt-1 text-sm font-medium ${directSpeechTurn === 'user' ? 'text-purple-700' : 'text-gray-500'}`}>Your Turn</div>
+                {directSpeechTurn === 'user' && isDirectRecording && (
+                  <Waveform active={true} className="mt-2" />
+                )}
+              </div>
+              <div className="flex flex-col items-center">
+                <div className="relative">
+                  <button
+                    className={`rounded-full w-20 h-20 flex items-center justify-center border-4 transition-all text-2xl font-bold mb-2 ${directSpeechTurn === 'ai' ? 'border-blue-500 bg-blue-100 animate-pulse' : 'border-gray-300 bg-gray-100'}`}
+                    disabled={directSpeechTurn !== 'ai'}
+                    onClick={handleAiReplay}
+                  >
+                    <Mic className={`h-10 w-10 ${directSpeechTurn === 'ai' ? 'text-blue-700' : 'text-gray-400'}`} />
+                  </button>
+                </div>
+                <div className={`mt-1 text-sm font-medium ${directSpeechTurn === 'ai' ? 'text-blue-700' : 'text-gray-500'}`}>AI</div>
+                {directSpeechTurn === 'ai' && aiSpeaking && (
+                  <Waveform active={true} className="mt-2" />
+                )}
+                {directSpeechTurn === 'ai' && aiSpeech && (
+                  <div className="mt-2 flex items-center space-x-2">
+                    <Volume2 className="h-4 w-4 text-blue-500" />
+                    <select
+                      className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none"
+                      value={aiSpeechSpeed}
+                      onChange={handleAiSpeedChange}
+                    >
+                      {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4].map((speed) => (
+                        <option key={speed} value={speed}>{speed}x</option>
+                      ))}
+                    </select>
+                    <button
+                      className="ml-2 px-4 py-1 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors text-sm"
+                      onClick={handleAiReplay}
+                      disabled={directSpeechTurn !== 'ai'}
+                    >
+                      Replay
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="w-full lg:w-80 flex-shrink-0 space-y-4">
+            <div className="bg-white rounded-xl shadow-lg p-4 flex items-center justify-between">
+              <span className="font-semibold text-gray-700">Time Left</span>
+              <span className="font-mono text-lg text-blue-600">{formatTime(timeRemaining)}</span>
+            </div>
+            <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl p-4">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">XP & Feedback</h3>
+              <div className="flex flex-col items-center">
+                <div className="text-2xl sm:text-3xl font-bold text-purple-600">{argumentCount}</div>
+                <div className="text-xs sm:text-sm text-gray-600 mb-2">Arguments Made</div>
+                <div className="text-xl sm:text-2xl font-bold text-green-600">+{Math.min(argumentCount * 10, 100)}</div>
+                <div className="text-xs sm:text-sm text-gray-600">Bonus XP</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-2 sm:p-4">
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6">
-          {/* Debate Interface */}
           <div className="lg:col-span-3">
             <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-              {/* Header */}
               <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-3 sm:p-6 text-white">
                 <div className="flex items-center justify-between">
                   <div className="flex-1 min-w-0">
@@ -638,9 +904,16 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
                     </div>
                   </div>
                 </div>
+                <div className="flex justify-center mt-4">
+                  <button
+                    onClick={() => setDebateFormat('direct-speech')}
+                    className="mb-4 px-6 py-2 rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-700 transition-colors"
+                  >
+                    Switch to Direct Speech
+                  </button>
+                </div>
               </div>
 
-              {/* API Error Display */}
               {apiError && (
                 <div className="bg-red-50 border-b border-red-200 p-3 sm:p-4">
                   <div className="flex items-start">
@@ -650,7 +923,6 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
                 </div>
               )}
 
-              {/* Messages Container - Fixed height to prevent movement */}
               <div className="h-64 sm:h-96 flex flex-col">
                 <div 
                   ref={messagesContainerRef}
@@ -666,7 +938,7 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
                         exit={{ opacity: 0, y: -20 }}
                         className={`flex ${message.speaker === 'user' ? 'justify-end' : 'justify-start'}`}
                       >
-                        <div className={`max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl p-3 sm:p-4 rounded-lg ${
+                        <div className={`max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl p-3 sm:p-4 rounded-lg relative flex flex-col ${
                           message.speaker === 'user'
                             ? 'bg-blue-600 text-white'
                             : message.content.includes('⚠️')
@@ -682,6 +954,18 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
                             <span className="text-xs sm:text-sm font-medium">
                               {message.speaker === 'user' ? 'You' : 'Gemini AI'}
                             </span>
+                            <button
+                              type="button"
+                              className={`ml-2 p-1 rounded-full border transition-colors flex-shrink-0 ${speakingId && speakingId !== message.id ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed' : 'bg-white border-gray-300 hover:bg-purple-50 text-purple-700'}`}
+                              aria-label={speakingId === message.id ? 'Stop playback' : 'Play message'}
+                              onClick={() => speakingId && speakingId !== message.id ? undefined : handleSpeak(message.id, message.content)}
+                              disabled={!!speakingId && speakingId !== message.id}
+                            >
+                              <Volume2 className={`h-4 w-4 ${speakingId === message.id ? 'text-purple-600 animate-pulse' : ''}`} />
+                            </button>
+                            {speakingId === message.id && (
+                              <Waveform active={true} className="ml-1" />
+                            )}
                           </div>
                           <p className="text-xs sm:text-sm">{message.content}</p>
                           {message.feedback && message.feedback.score > 0 && (
@@ -716,14 +1000,12 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
                       </motion.div>
                     )}
                   </AnimatePresence>
-                  {/* Invisible scroll anchor */}
                   <div ref={messagesEndRef} />
                 </div>
               </div>
 
-              {/* Input */}
               <div className="border-t border-gray-200 p-3 sm:p-4">
-                <div className="flex space-x-2 sm:space-x-3">
+                <div className="flex space-x-2 sm:space-x-3 items-center">
                   <textarea
                     value={currentMessage}
                     onChange={(e) => setCurrentMessage(e.target.value)}
@@ -739,20 +1021,33 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
                     }}
                   />
                   <button
+                    type="button"
+                    onClick={handleMicClick}
+                    disabled={!userTurn || isAiThinking}
+                    className={`p-2 sm:p-3 rounded-lg border transition-colors flex-shrink-0 ${isRecording ? 'bg-purple-100 border-purple-400' : 'bg-white border-gray-300 hover:bg-purple-50'}`}
+                    aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+                  >
+                    <Mic className={`h-5 w-5 ${isRecording ? 'text-purple-600 animate-pulse' : 'text-gray-700'}`} />
+                  </button>
+                  <button
                     onClick={sendMessage}
                     disabled={!userTurn || !currentMessage.trim()}
                     className="bg-blue-600 text-white p-2 sm:p-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex-shrink-0"
                   >
                     <Send className="h-4 w-4 sm:h-5 sm:w-5" />
                   </button>
+                  {isRecording && (
+                    <Waveform active={true} className="ml-2" />
+                  )}
                 </div>
+                {recordingError && (
+                  <div className="text-xs text-red-600 mt-1">{recordingError}</div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Sidebar */}
           <div className="space-y-4 sm:space-y-6">
-            {/* Live Feedback */}
             <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
               <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 <Target className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-blue-600" />
@@ -792,7 +1087,6 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
               )}
             </div>
 
-            {/* Argument Counter */}
             <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl p-4 sm:p-6">
               <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">📊 Argument Tracker</h3>
               <div className="space-y-3">
@@ -810,7 +1104,6 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
               </div>
             </div>
 
-            {/* AI Status */}
             <div className={`rounded-xl p-4 ${aiConfigured ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
               <div className="flex items-center mb-2">
                 <Zap className={`h-4 w-4 sm:h-5 sm:w-5 mr-2 ${aiConfigured ? 'text-green-600' : 'text-red-600'}`} />
@@ -826,7 +1119,6 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
               </p>
             </div>
 
-            {/* Tips */}
             <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl p-4 sm:p-6">
               <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">💡 Unlimited Debate Tips</h3>
               <ul className="text-xs sm:text-sm text-gray-700 space-y-2">
@@ -840,7 +1132,6 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
               </ul>
             </div>
 
-            {/* Back Button (Mobile) */}
             <div className="lg:hidden">
               <button
                 onClick={onBack}
