@@ -247,14 +247,14 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
             <div className="mb-8 p-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-200">
               <div className="flex items-center mb-4">
                 <Plus className="h-5 w-5 text-blue-600 mr-2" />
-                <h3 className="text-lg font-semibold text-gray-900">Create Custom Topic</h3>
+                <h3 className="text-lg font-semibold text-gray-900">Create Your Own Topic</h3>
               </div>
               <div className="flex space-x-3">
                 <input
                   type="text"
                   value={customTopic}
                   onChange={(e) => setCustomTopic(e.target.value)}
-                  placeholder="Enter your own debate topic..."
+                  placeholder="Type your custom debate topic here..."
                   className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   onKeyPress={(e) => e.key === 'Enter' && handleCustomTopicSubmit()}
                 />
@@ -264,14 +264,14 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
                   className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center"
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Use Topic
+                  Use This Topic
                 </button>
               </div>
               {useCustomTopic && selectedTopic && (
                 <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                   <div className="flex items-center">
                     <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
-                    <span className="text-green-800 font-medium">Custom topic selected: "{selectedTopic}"</span>
+                    <span className="text-green-800 font-medium">✓ Custom topic ready: "{selectedTopic}"</span>
                   </div>
                 </div>
               )}
