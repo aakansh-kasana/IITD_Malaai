@@ -12,6 +12,15 @@ interface PracticeDebateProps {
 
 type DebateFormat = 'text-speech' | 'direct-speech';
 
+// Add debounce utility
+function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
+  let timer: any;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+}
+
 export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBack }) => {
   const [topic, setTopic] = useState('');
   const [userSide, setUserSide] = useState<'pro' | 'con'>('pro');
@@ -44,7 +53,7 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
   const [aiSpeechSpeed, setAiSpeechSpeed] = useState(1);
   const [aiSpeechUtter, setAiSpeechUtter] = useState<SpeechSynthesisUtterance | null>(null);
 
-  const topics = [
+  const DEFAULT_TOPICS = [
     'School uniforms should be mandatory',
     'Social media does more harm than good',
     'Homework should be banned',
@@ -56,6 +65,80 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
     'Standardized testing should be eliminated',
     'Universal basic income should be implemented'
   ];
+  const [suggestedTopics, setSuggestedTopics] = useState<string[]>(DEFAULT_TOPICS);
+  const [topicInput, setTopicInput] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [fetchingTopics, setFetchingTopics] = useState(false);
+  const [topicValidation, setTopicValidation] = useState<{valid: boolean, reason: string} | null>(null);
+  const [validatingTopic, setValidatingTopic] = useState(false);
+  const [fetchingCompletions, setFetchingCompletions] = useState(false);
+  const [rephrasedSuggestions, setRephrasedSuggestions] = useState<string[]>([]);
+  const [fetchingRephrased, setFetchingRephrased] = useState(false);
+
+  // Debounced Gemini validation
+  const debouncedValidate = useRef(
+    debounce(async (input: string) => {
+      setValidatingTopic(true);
+      try {
+        const result = await geminiService.validateDebateTopic(input);
+        setTopicValidation(result);
+      } catch (e: any) {
+        setTopicValidation({ valid: false, reason: e.message || 'Validation failed' });
+      } finally {
+        setValidatingTopic(false);
+      }
+    }, 400)
+  ).current;
+
+  // Debounced Gemini completions
+  const debouncedCompletions = useRef(
+    debounce(async (input: string) => {
+      if (!aiConfigured || input.length < 4) return;
+      setFetchingCompletions(true);
+      try {
+        const completions = await geminiService.suggestDebateCompletions(input);
+        // Merge, dedupe, and filter
+        const merged = Array.from(new Set([
+          ...completions,
+          ...suggestedTopics,
+          ...DEFAULT_TOPICS
+        ])).filter(t =>
+          t.toLowerCase().includes(input.toLowerCase()) && t.toLowerCase() !== input.toLowerCase()
+        ).slice(0, 10);
+        setSuggestedTopics(merged);
+      } catch {
+        // fallback: keep current suggestions
+      } finally {
+        setFetchingCompletions(false);
+      }
+    }, 400)
+  ).current;
+
+  // On topic input change
+  useEffect(() => {
+    if (topicInput.length > 3) {
+      debouncedValidate(topicInput);
+      debouncedCompletions(topicInput);
+    } else {
+      setTopicValidation(null);
+      setSuggestedTopics(DEFAULT_TOPICS);
+    }
+    setTopic(topicInput);
+  }, [topicInput]);
+
+  // Show suggestions when input is focused
+  const handleInputFocus = () => {
+    setShowSuggestions(true);
+    fetchTopics();
+  };
+
+  // Filter suggestions as user types (already filtered in completions, but keep for fallback)
+  const filteredSuggestions = suggestedTopics.filter(t =>
+    t.toLowerCase().includes(topicInput.toLowerCase()) && t.toLowerCase() !== topicInput.toLowerCase()
+  ).slice(0, 10);
+
+  // Only allow starting debate if Gemini says topic is valid
+  const canStartDebate = topicValidation && topicValidation.valid;
 
   useEffect(() => {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key');
@@ -437,6 +520,38 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
     }
   };
 
+  // Fetch topics from Gemini when selector opens
+  const fetchTopics = async () => {
+    if (!aiConfigured) {
+      setSuggestedTopics(DEFAULT_TOPICS);
+      return;
+    }
+    setFetchingTopics(true);
+    try {
+      const aiTopics = await geminiService.suggestDebateTopics();
+      const merged = Array.from(new Set([...aiTopics, ...DEFAULT_TOPICS]));
+      setSuggestedTopics(merged);
+    } catch (e) {
+      setSuggestedTopics(DEFAULT_TOPICS);
+    } finally {
+      setFetchingTopics(false);
+    }
+  };
+
+  // Fetch rephrased suggestions when topic is invalid
+  useEffect(() => {
+    if (topicValidation && !topicValidation.valid && topicInput.length > 3) {
+      setFetchingRephrased(true);
+      geminiService.getRephrasedDebateTopics(topicInput)
+        .then(suggestions => setRephrasedSuggestions(suggestions))
+        .catch(() => setRephrasedSuggestions([]))
+        .finally(() => setFetchingRephrased(false));
+    } else {
+      setRephrasedSuggestions([]);
+      setFetchingRephrased(false);
+    }
+  }, [topicValidation, topicInput]);
+
   if (debateEnded && finalFeedback) {
     const userMessages = messages.filter(m => m.speaker === 'user');
     const argumentBonus = Math.min(userMessages.length * 10, 100);
@@ -670,21 +785,76 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
                 <label className="block text-base sm:text-lg font-medium text-gray-900 mb-4">
                   Choose a debate topic:
                 </label>
-                <div className="space-y-2 sm:space-y-3 max-h-64 overflow-y-auto">
-                  {topics.map((topicOption) => (
-                    <button
-                      key={topicOption}
-                      onClick={() => setTopic(topicOption)}
-                      className={`w-full p-3 sm:p-4 text-left rounded-lg border-2 transition-all text-sm sm:text-base ${
-                        topic === topicOption
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
-                      }`}
-                    >
-                      {topicOption}
-                    </button>
-                  ))}
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="w-full p-3 sm:p-4 rounded-lg border-2 text-sm sm:text-base focus:outline-none focus:border-blue-500"
+                    placeholder="Type or select a topic..."
+                    value={topicInput}
+                    onChange={e => {
+                      setTopicInput(e.target.value);
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={handleInputFocus}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                  />
+                  {(fetchingTopics || fetchingCompletions) && (
+                    <div className="absolute right-3 top-3 text-blue-400 animate-spin">⏳</div>
+                  )}
+                  {showSuggestions && filteredSuggestions.length > 0 && (
+                    <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-60 overflow-y-auto">
+                      {filteredSuggestions.map((s, idx) => (
+                        <button
+                          key={s + idx}
+                          type="button"
+                          className="block w-full text-left px-4 py-2 hover:bg-blue-50 text-sm sm:text-base"
+                          onMouseDown={() => {
+                            setTopicInput(s);
+                            setShowSuggestions(false);
+                          }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
+                {validatingTopic && (
+                  <div className="text-blue-500 text-xs mt-2">Checking topic validity...</div>
+                )}
+                {topicValidation && (
+                  <div className={
+                    topicValidation.valid
+                      ? 'text-green-600 text-xs mt-2'
+                      : 'text-red-500 text-xs mt-2'
+                  }>
+                    {topicValidation.valid ? '✓ Valid debate topic!' : `✗ ${topicValidation.reason}`}
+                  </div>
+                )}
+                {/* Show rephrased suggestions if topic is invalid */}
+                {(!topicValidation?.valid && rephrasedSuggestions.length > 0) && (
+                  <div className="mt-2">
+                    <div className="text-xs text-gray-600 mb-1">Try one of these instead:</div>
+                    <div className="flex flex-col gap-1">
+                      {rephrasedSuggestions.map((s, idx) => (
+                        <button
+                          key={s + idx}
+                          type="button"
+                          className="text-left px-3 py-2 rounded bg-gray-100 hover:bg-blue-50 border border-gray-200 text-sm"
+                          onClick={() => {
+                            setTopicInput(s);
+                            setShowSuggestions(false);
+                          }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {fetchingRephrased && !topicValidation?.valid && (
+                  <div className="text-blue-400 text-xs mt-2 flex items-center gap-1"><span className="animate-spin">⏳</span> Getting better topic suggestions...</div>
+                )}
               </div>
 
               <div>
@@ -767,7 +937,7 @@ export const PracticeDebate: React.FC<PracticeDebateProps> = ({ onComplete, onBa
 
               <button
                 onClick={startDebate}
-                disabled={!topic || !aiConfigured}
+                disabled={!topic || !aiConfigured || !canStartDebate}
                 className="w-full bg-blue-600 text-white py-3 sm:py-4 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center text-sm sm:text-base"
               >
                 {!aiConfigured ? (
