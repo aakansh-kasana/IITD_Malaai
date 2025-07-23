@@ -393,6 +393,103 @@ RESPOND WITH ONLY THE JSON OBJECT:`;
     this.callCount = 0;
     console.log('📊 API call statistics reset');
   }
+
+  // Suggest debate topics using Gemini
+  async suggestDebateTopics(): Promise<string[]> {
+    this.callCount++;
+    const callId = `TOPICS-${this.callCount}-${Date.now()}`;
+    if (!this.isConfigured()) {
+      throw new Error(`[${callId}] AI API not configured. Please add your API key to enable topic suggestions.`);
+    }
+    const prompt = `Suggest 10 unique, current, and age-appropriate debate topics for students aged 16 to 25.\nEnsure they are phrased clearly and cover diverse themes (e.g., tech, ethics, politics, society).\nFormat each as a question or a statement suitable for debate.\nReturn as a numbered list.`;
+    try {
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text().trim();
+      return this.parseTopicList(text);
+    } catch (error: any) {
+      console.error(`[${callId}] Failed to fetch topics from Gemini:`, error);
+      throw new Error(`[${callId}] Failed to fetch topics from Gemini: ${error.message || 'Unknown error'}`);
+    }
+  }
+
+  // Validate if a topic is a valid debate topic using Gemini
+  async validateDebateTopic(topic: string): Promise<{valid: boolean, reason: string}> {
+    this.callCount++;
+    const callId = `VALIDATE-${this.callCount}-${Date.now()}`;
+    if (!this.isConfigured()) {
+      throw new Error(`[${callId}] AI API not configured. Please add your API key to enable topic validation.`);
+    }
+    const prompt = `Check if the following input is a valid debate topic. Consider a topic valid if it invites opposing viewpoints and can be discussed meaningfully by students aged 16–25, even if the terminology may need light clarification.\n- The topic should be phrased as a motion or a question.\n- It should be discussable from two or more sides.\n- It should be age-appropriate (16-25).\n\nReturn \"VALID\" or \"INVALID\" with a short reason.\n\nTopic: \"${topic}\"`;
+    try {
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text().trim();
+      // Parse response: expect 'VALID' or 'INVALID' with reason
+      const match = text.match(/^(VALID|INVALID)\s*[:-]?\s*(.*)$/i);
+      if (match) {
+        return { valid: match[1].toUpperCase() === 'VALID', reason: match[2] || '' };
+      }
+      // Fallback: treat as invalid
+      return { valid: false, reason: text };
+    } catch (error: any) {
+      return { valid: false, reason: error.message || 'Validation failed' };
+    }
+  }
+
+  // Suggest completions for a partial debate topic using Gemini
+  async suggestDebateCompletions(partial: string): Promise<string[]> {
+    this.callCount++;
+    const callId = `COMPLETE-${this.callCount}-${Date.now()}`;
+    if (!this.isConfigured()) {
+      throw new Error(`[${callId}] AI API not configured. Please add your API key to enable topic completions.`);
+    }
+    const prompt = `The user is typing a debate topic. Based on what they typed, suggest the most likely full debate motions or questions they might be aiming for.\n\nPartial input: \"${partial}\"\n\nReturn 5 complete debate topics starting with or based on that phrase. Format as a list.`;
+    try {
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text().trim();
+      return this.parseTopicList(text);
+    } catch (error: any) {
+      return [];
+    }
+  }
+
+  // Suggest 4 well-phrased, valid debate topics closely related to the user's input
+  async getRephrasedDebateTopics(userInput: string): Promise<string[]> {
+    this.callCount++;
+    const callId = `REPHRASE-${this.callCount}-${Date.now()}`;
+    if (!this.isConfigured()) {
+      throw new Error(`[${callId}] AI API not configured. Please add your API key to enable topic rephrasing.`);
+    }
+    const prompt = `The user entered a debate topic that was rejected as invalid. Suggest 4 well-phrased, valid debate topics that are closely related to: "${userInput}". Use a mix of debate styles (questions, motions, etc.) suitable for students aged 16-25. Format as a numbered list.`;
+    try {
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text().trim();
+      return this.parseTopicList(text);
+    } catch (error: any) {
+      return [];
+    }
+  }
+
+  // Helper to parse a numbered list from Gemini's response
+  private parseTopicList(response: string): string[] {
+    const lines = response.split(/\n|\r/).map(l => l.trim()).filter(Boolean);
+    const topics: string[] = [];
+    for (const line of lines) {
+      const match = line.match(/^\d+\.?\s*(.*)$/);
+      if (match && match[1]) {
+        topics.push(match[1].trim());
+      } else if (line.length > 0) {
+        topics.push(line);
+      }
+    }
+    if (topics.length === 0 && response.length > 0) {
+      topics.push(response);
+    }
+    return topics;
+  }
 }
 
 export const geminiService = new GeminiService();
