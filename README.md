@@ -165,10 +165,4 @@ This project is open-source and licensed under the **MIT License**. See the [LIC
 
 ---
 
-## 👨‍💻 About the Developer
-
-[Optional: Add a brief section about yourself or the team, your motivation for the project, etc.]
-
----
-
 > 💬 *“DebateMaster: Empowering the next generation of critical thinkers and communicators through innovative AI.”*
